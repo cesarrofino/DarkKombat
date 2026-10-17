@@ -1,43 +1,65 @@
-name: Android Build
+name: Compilar Dark Kombat Android
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
   workflow_dispatch:
+  push:
+    paths:
+      - 'DarkKombat.zip'
+      - '.github/workflows/android-build.yml'
 
 jobs:
-  tests:
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Obter ficheiros do repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
         with:
-          node-version: 20
-      - name: Testes automáticos (lógica, IA, protocolo, fumo da app)
-        run: node tests/run.js
+          distribution: 'temurin'
+          java-version: '17'
 
-  apk:
-    runs-on: ubuntu-latest
-    needs: tests
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - uses: gradle/actions/setup-gradle@v3
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.5
 
-      - name: Compilar APK de depuração
-        run: gradle :app:assembleDebug --stacktrace
+      - name: Extrair ZIP do Projeto
+        run: |
+          if [ -f "DarkKombat.zip" ]; then
+            echo "A descompactar DarkKombat.zip..."
+            unzip -o DarkKombat.zip -d extracted_project
+          else
+            echo "Erro: DarkKombat.zip nao encontrado na raiz do repositorio!"
+            exit 1
+          fi
 
-      - name: Publicar APK
+      - name: Testes automaticos (logica, IA, protocolo)
+        run: |
+          ROOT_PROJECT_DIR=$(find extracted_project -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1 | xargs dirname)
+          cd "$ROOT_PROJECT_DIR"
+          node tests/run.js
+
+      - name: Compilar APK
+        run: |
+          ROOT_PROJECT_DIR=$(find extracted_project -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1 | xargs dirname)
+
+          if [ -z "$ROOT_PROJECT_DIR" ]; then
+            echo "Erro: Pasta raiz do projeto Gradle nao encontrada."
+            exit 1
+          fi
+
+          cd "$ROOT_PROJECT_DIR"
+          echo "Diretorio raiz do projeto: $(pwd)"
+
+          echo "A compilar o APK (assembleDebug)..."
+          gradle :app:assembleDebug --stacktrace
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: DarkKombat-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: extracted_project/**/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
